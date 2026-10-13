@@ -1,6 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@shared/routes";
-import { type ShoppingListResponse } from "@shared/schema";
 
 export function useShoppingList() {
   return useQuery({
@@ -8,9 +7,7 @@ export function useShoppingList() {
     queryFn: async () => {
       const res = await fetch(api.shoppingList.get.path, { credentials: "include" });
       if (!res.ok) throw new Error("Failed to fetch shopping list");
-      
-      const data = await res.json();
-      return api.shoppingList.get.responses[200].parse(data) as ShoppingListResponse;
+      return api.shoppingList.get.responses[200].parse(await res.json());
     },
   });
 }

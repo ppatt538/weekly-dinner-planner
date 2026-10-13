@@ -1,13 +1,10 @@
 import { useState } from "react";
-import { useRecipes } from "@/hooks/use-recipes";
-import { useWeeklyPlan, useClearPlan } from "@/hooks/use-plan";
-import { Header } from "@/components/Header";
-import { RecipeCard } from "@/components/RecipeCard";
-import { DayColumn } from "@/components/DayColumn";
-import { Input } from "@/components/ui/input";
+import { Plus, Calendar, RotateCcw } from "lucide-react";
+import { Navigation } from "@/components/Navigation";
+import { SearchModal } from "@/components/SearchModal";
+import { MealCard } from "@/components/MealCard";
+import { useMealPlans, useClearMealPlans } from "@/hooks/use-meal-plans";
 import { Button } from "@/components/ui/button";
-import { Search, Trash2, Loader2, Sparkles } from "lucide-react";
-import { format } from "date-fns";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -19,41 +16,46 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
+import { cn } from "@/lib/utils";
 
 const DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
 
 export default function Home() {
-  const [search, setSearch] = useState("");
-  const { data: recipes, isLoading: loadingRecipes } = useRecipes(search);
-  const { data: plan, isLoading: loadingPlan } = useWeeklyPlan();
-  const { mutate: clearPlan, isPending: clearingPlan } = useClearPlan();
+  const [selectedDay, setSelectedDay] = useState<string | null>(null);
+  const [isSearchOpen, setIsSearchOpen] = useState(false);
+  const { data: mealPlans, isLoading } = useMealPlans();
+  const { mutate: clearWeek, isPending: isClearing } = useClearMealPlans();
 
-  const currentDayName = format(new Date(), "EEEE");
+  const handleAddClick = (day: string) => {
+    setSelectedDay(day);
+    setIsSearchOpen(true);
+  };
 
-  // Helper to get items for a specific day
-  const getItemsForDay = (day: string) => {
-    return plan?.filter((item) => item.day === day) || [];
+  const getMealsForDay = (day: string) => {
+    return mealPlans?.filter((plan: any) => plan.day === day) || [];
   };
 
   return (
-    <div className="min-h-screen bg-background flex flex-col">
-      <Header />
-
-      <main className="flex-1 container mx-auto px-4 py-8 grid grid-cols-1 lg:grid-cols-12 gap-8">
-        
-        {/* Left Column: Weekly Calendar */}
-        <div className="lg:col-span-7 space-y-6">
-          <div className="flex items-center justify-between">
-            <div>
-              <h1 className="text-3xl font-display font-bold text-foreground">Weekly Menu</h1>
-              <p className="text-muted-foreground">Plan your meals for the week ahead.</p>
-            </div>
-            
-            {plan && plan.length > 0 && (
+    <div className="min-h-screen bg-stone-50/50 pb-20">
+      <Navigation />
+      
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <header className="flex flex-col md:flex-row md:items-end justify-between gap-4 mb-10">
+          <div>
+            <h1 className="font-display font-bold text-4xl md:text-5xl text-foreground mb-2">
+              Weekly Menu
+            </h1>
+            <p className="text-muted-foreground text-lg max-w-xl">
+              Plan your meals for the week. Search for recipes by name, ingredient, or cuisine.
+            </p>
+          </div>
+          
+          <div className="flex items-center gap-3">
+            {mealPlans && mealPlans.length > 0 && (
               <AlertDialog>
                 <AlertDialogTrigger asChild>
-                  <Button variant="outline" size="sm" className="text-destructive hover:text-destructive hover:bg-destructive/10 border-destructive/20">
-                    <Trash2 className="w-4 h-4 mr-2" />
+                  <Button variant="outline" className="gap-2 text-muted-foreground hover:text-destructive hover:border-destructive/30">
+                    <RotateCcw className="w-4 h-4" />
                     Clear Week
                   </Button>
                 </AlertDialogTrigger>
@@ -61,90 +63,100 @@ export default function Home() {
                   <AlertDialogHeader>
                     <AlertDialogTitle>Clear weekly plan?</AlertDialogTitle>
                     <AlertDialogDescription>
-                      This will remove all meals from your current week's schedule. This action cannot be undone.
+                      This will remove all meals from your schedule. This action cannot be undone.
                     </AlertDialogDescription>
                   </AlertDialogHeader>
                   <AlertDialogFooter>
                     <AlertDialogCancel>Cancel</AlertDialogCancel>
                     <AlertDialogAction 
-                      onClick={() => clearPlan()}
-                      className="bg-destructive hover:bg-destructive/90 text-white"
-                      disabled={clearingPlan}
+                      onClick={() => clearWeek()}
+                      className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
                     >
-                      {clearingPlan ? "Clearing..." : "Yes, Clear All"}
+                      {isClearing ? "Clearing..." : "Yes, Clear All"}
                     </AlertDialogAction>
                   </AlertDialogFooter>
                 </AlertDialogContent>
               </AlertDialog>
             )}
           </div>
+        </header>
 
-          {loadingPlan ? (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-               {[...Array(4)].map((_, i) => (
-                 <div key={i} className="h-48 rounded-2xl bg-muted/30 animate-pulse" />
-               ))}
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {DAYS.map((day) => (
-                <DayColumn 
-                  key={day} 
-                  day={day} 
-                  items={getItemsForDay(day)} 
-                  isToday={day === currentDayName}
-                />
-              ))}
-            </div>
-          )}
-        </div>
-
-        {/* Right Column: Recipe Search */}
-        <div className="lg:col-span-5 flex flex-col h-[calc(100vh-8rem)] sticky top-24">
-          <div className="bg-card border border-border/50 rounded-2xl shadow-lg shadow-black/5 flex flex-col h-full overflow-hidden">
-            <div className="p-6 border-b border-border/50 bg-secondary/30">
-              <div className="flex items-center justify-between mb-4">
-                <h2 className="text-xl font-display font-bold flex items-center gap-2">
-                  <Sparkles className="w-5 h-5 text-accent" />
-                  Recipe Book
-                </h2>
-                <span className="text-xs font-medium bg-white px-2 py-1 rounded-full border shadow-sm">
-                  {recipes?.length || 0} Recipes
-                </span>
-              </div>
-              
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                <Input 
-                  placeholder="Search by name, ingredient, or cuisine..." 
-                  className="pl-9 bg-white border-border/60 focus:ring-primary/20"
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                />
-              </div>
-            </div>
-
-            <div className="flex-1 overflow-y-auto p-6 scroll-smooth">
-              {loadingRecipes ? (
-                <div className="flex flex-col items-center justify-center h-40 gap-3">
-                  <Loader2 className="w-8 h-8 animate-spin text-primary" />
-                  <span className="text-muted-foreground text-sm">Loading kitchen...</span>
-                </div>
-              ) : recipes?.length === 0 ? (
-                <div className="text-center py-12 text-muted-foreground">
-                  <p>No recipes found matching "{search}"</p>
-                </div>
-              ) : (
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-1 gap-4">
-                  {recipes?.map((recipe) => (
-                    <RecipeCard key={recipe.id} recipe={recipe} />
-                  ))}
-                </div>
-              )}
-            </div>
+        {isLoading ? (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+            {DAYS.map((day) => (
+              <div key={day} className="h-64 rounded-2xl bg-white/50 border border-dashed border-border animate-pulse" />
+            ))}
           </div>
-        </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+            {DAYS.map((day) => {
+              const meals = getMealsForDay(day);
+              const isToday = new Date().toLocaleDateString('en-US', { weekday: 'long' }) === day;
+              
+              return (
+                <div 
+                  key={day} 
+                  className={cn(
+                    "flex flex-col rounded-2xl p-4 min-h-[300px] transition-all duration-300",
+                    isToday 
+                      ? "bg-white ring-2 ring-primary/20 shadow-lg shadow-primary/5" 
+                      : "bg-white/60 border border-border/40 hover:bg-white hover:shadow-md"
+                  )}
+                >
+                  <div className="flex items-center justify-between mb-4">
+                    <h3 className={cn(
+                      "font-display font-bold text-xl",
+                      isToday ? "text-primary" : "text-foreground"
+                    )}>
+                      {day}
+                      {isToday && <span className="ml-2 text-xs font-sans font-medium px-2 py-0.5 rounded-full bg-primary/10 text-primary">Today</span>}
+                    </h3>
+                    <div className="bg-stone-100 p-1.5 rounded-lg">
+                      <Calendar className="w-4 h-4 text-stone-400" />
+                    </div>
+                  </div>
+
+                  <div className="flex-1 space-y-3">
+                    {meals.length === 0 ? (
+                      <div className="h-full flex flex-col items-center justify-center text-center p-4 border-2 border-dashed border-border/50 rounded-xl">
+                        <p className="text-sm text-muted-foreground mb-3">No meals planned</p>
+                        <Button 
+                          variant="ghost" 
+                          size="sm"
+                          onClick={() => handleAddClick(day)}
+                          className="text-primary hover:text-primary hover:bg-primary/5 font-medium"
+                        >
+                          <Plus className="w-4 h-4 mr-1" /> Add Meal
+                        </Button>
+                      </div>
+                    ) : (
+                      <>
+                        {meals.map((meal: any) => (
+                          <MealCard key={meal.id} mealPlan={meal} />
+                        ))}
+                        <Button 
+                          variant="ghost" 
+                          size="sm"
+                          onClick={() => handleAddClick(day)}
+                          className="w-full mt-2 text-muted-foreground hover:text-primary border border-dashed border-border hover:border-primary/30 hover:bg-primary/5 h-10"
+                        >
+                          <Plus className="w-4 h-4 mr-1" /> Add Another
+                        </Button>
+                      </>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
       </main>
+
+      <SearchModal 
+        open={isSearchOpen} 
+        onOpenChange={setIsSearchOpen} 
+        targetDay={selectedDay} 
+      />
     </div>
   );
 }

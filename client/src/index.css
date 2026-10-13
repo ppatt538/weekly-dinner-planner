@@ -1,107 +1,73 @@
-@import url('https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400..700;1,9..40,400..700&family=Outfit:wght@300..900&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;500;700&family=Playfair+Display:wght@500;700;900&display=swap');
 
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 :root {
-  /* Fresh, organic palette */
-  --font-sans: 'DM Sans', sans-serif;
-  --font-display: 'Outfit', sans-serif;
+  --font-body: 'DM Sans', sans-serif;
+  --font-display: 'Playfair+Display', serif;
 
-  --background: 40 50% 98%;      /* Soft cream background */
-  --foreground: 150 5% 20%;      /* Dark green-grey text */
-
-  --card: 0 0% 100%;
-  --card-foreground: 150 5% 20%;
-
-  --popover: 0 0% 100%;
-  --popover-foreground: 150 5% 20%;
-
-  --primary: 142 60% 35%;        /* Garden Green */
+  /* Fresh, Appetizing Palette (Green & Orange accents) */
+  --background: 60 30% 98%;      /* Creamy off-white */
+  --foreground: 160 6% 15%;      /* Dark charcoal */
+  
+  --primary: 155 45% 42%;        /* Sage Green */
   --primary-foreground: 0 0% 100%;
-
-  --secondary: 40 30% 94%;       /* Subtle beige */
-  --secondary-foreground: 142 60% 25%;
-
-  --muted: 150 10% 94%;
-  --muted-foreground: 150 10% 40%;
-
-  --accent: 25 85% 55%;          /* Zesty Orange */
-  --accent-foreground: 0 0% 100%;
-
+  
+  --secondary: 32 90% 65%;       /* Warm Orange */
+  --secondary-foreground: 0 0% 100%;
+  
+  --muted: 60 10% 90%;
+  --muted-foreground: 160 4% 45%;
+  
+  --accent: 32 90% 92%;          /* Light orange tint */
+  --accent-foreground: 32 80% 40%;
+  
   --destructive: 0 84% 60%;
   --destructive-foreground: 0 0% 98%;
 
-  --border: 150 10% 90%;
-  --input: 150 10% 90%;
-  --ring: 142 60% 35%;
-
-  --radius: 1rem;
+  --border: 160 5% 90%;
+  --input: 160 5% 90%;
+  --ring: 155 45% 42%;
+  
+  --radius: 0.75rem;
 }
 
 .dark {
-  /* Dark mode not primary focus but good fallback */
-  --background: 150 5% 10%;
-  --foreground: 40 30% 94%;
-
-  --card: 150 5% 13%;
-  --card-foreground: 40 30% 94%;
-
-  --popover: 150 5% 13%;
-  --popover-foreground: 40 30% 94%;
-
-  --primary: 142 50% 45%;
+  /* Dark mode palette adjustments if needed, though food apps often stay light */
+  --background: 160 10% 10%;
+  --foreground: 60 30% 98%;
+  
+  --primary: 155 40% 50%;
   --primary-foreground: 0 0% 100%;
-
-  --secondary: 150 5% 18%;
-  --secondary-foreground: 40 30% 94%;
-
-  --muted: 150 5% 18%;
-  --muted-foreground: 150 10% 60%;
-
-  --accent: 25 85% 55%;
-  --accent-foreground: 0 0% 100%;
-
-  --destructive: 0 62% 30%;
-  --destructive-foreground: 0 0% 98%;
-
-  --border: 150 5% 20%;
-  --input: 150 5% 20%;
-  --ring: 142 50% 45%;
+  
+  --secondary: 32 80% 60%;
+  
+  --muted: 160 10% 20%;
+  --muted-foreground: 160 5% 65%;
+  
+  --accent: 160 10% 20%;
+  --accent-foreground: 32 80% 70%;
+  
+  --border: 160 10% 20%;
+  --input: 160 10% 20%;
 }
 
 @layer base {
-  * {
-    @apply border-border;
-  }
   body {
-    @apply bg-background text-foreground;
-    font-family: var(--font-sans);
+    @apply bg-background text-foreground antialiased;
+    font-family: var(--font-body);
   }
+  
   h1, h2, h3, h4, h5, h6 {
     font-family: var(--font-display);
-    @apply font-bold tracking-tight text-foreground;
+    @apply tracking-tight;
   }
 }
 
-/* Custom Scrollbar */
-::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
-}
-::-webkit-scrollbar-track {
-  @apply bg-transparent;
-}
-::-webkit-scrollbar-thumb {
-  @apply bg-muted-foreground/20 rounded-full hover:bg-muted-foreground/40 transition-colors;
-}
-
-/* Glassmorphism helpers */
-.glass-panel {
-  @apply bg-white/70 backdrop-blur-md border border-white/50 shadow-xl;
-}
-
-.dark .glass-panel {
-  @apply bg-black/40 backdrop-blur-md border border-white/10 shadow-xl;
+@layer utilities {
+  .text-shadow {
+    text-shadow: 0 1px 2px rgba(0,0,0,0.1);
+  }
 }

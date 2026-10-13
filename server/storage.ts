@@ -1,253 +1,148 @@
+
 import { db } from "./db";
 import {
   recipes,
   ingredients,
   recipeIngredients,
-  weeklyPlan,
+  mealPlans,
   type Recipe,
-  type Ingredient,
-  type WeeklyPlanItem,
-  type CreateWeeklyPlanRequest,
+  type InsertMealPlan,
+  type MealPlan,
   type RecipeWithIngredients,
-  type WeeklyPlanItemWithRecipe,
-  type ShoppingListResponse
+  type MealPlanWithRecipe,
 } from "@shared/schema";
-import { eq } from "drizzle-orm";
-
-export type CreateRecipeInput = {
-  name: string;
-  cuisine?: string;
-  prepTime?: number;
-  instructions?: string[];
-  ingredients?: { name: string; quantity?: string }[];
-};
+import { eq, ilike, or, and, inArray } from "drizzle-orm";
 
 export interface IStorage {
   // Recipes
-  getRecipes(search?: string): Promise<RecipeWithIngredients[]>;
+  getRecipes(query?: string, cuisine?: string, ingredient?: string): Promise<Recipe[]>;
   getRecipe(id: number): Promise<RecipeWithIngredients | undefined>;
-  createRecipe(name: string, cuisine?: string): Promise<Recipe>;
-  createFullRecipe(input: CreateRecipeInput): Promise<RecipeWithIngredients>;
-  updateFullRecipe(id: number, input: CreateRecipeInput): Promise<RecipeWithIngredients | undefined>;
-  deleteRecipe(id: number): Promise<boolean>;
-  updateRecipeCuisine(id: number, cuisine: string): Promise<void>;
-  updateRecipeImage(id: number, imageUrl: string): Promise<Recipe>;
-  updateRecipeServings(id: number, servings: number): Promise<Recipe>;
-  updateRecipeInstructions(id: number, instructions: string[]): Promise<Recipe>;
-  toggleFavorite(id: number): Promise<Recipe>;
-  createIngredient(name: string): Promise<Ingredient>;
-  linkIngredientToRecipe(recipeId: number, ingredientId: number, quantity: string): Promise<void>;
   
-  // Plan
-  getWeeklyPlan(): Promise<WeeklyPlanItemWithRecipe[]>;
-  addToPlan(plan: CreateWeeklyPlanRequest): Promise<WeeklyPlanItem>;
-  removeFromPlan(id: number): Promise<void>;
-  clearPlan(): Promise<void>;
-  
-  // Shopping List
-  getShoppingList(): Promise<ShoppingListResponse>;
+  // Meal Plans
+  getMealPlans(): Promise<MealPlanWithRecipe[]>;
+  createMealPlan(plan: InsertMealPlan): Promise<MealPlan>;
+  deleteMealPlan(id: number): Promise<void>;
+  clearMealPlans(): Promise<void>;
+
+  // Internal for seeding
+  createRecipe(recipe: { name: string; cuisine?: string }): Promise<Recipe>;
+  createIngredient(name: string): Promise<{ id: number; name: string }>;
+  addRecipeIngredient(recipeId: number, ingredientId: number, quantity: string): Promise<void>;
+  getRecipeByName(name: string): Promise<Recipe | undefined>;
+  getIngredientByName(name: string): Promise<{ id: number; name: string } | undefined>;
 }
 
 export class DatabaseStorage implements IStorage {
-  async getRecipes(search?: string): Promise<RecipeWithIngredients[]> {
-    // This is a simplified fetch. For production, Drizzle's query builder with `with` is better.
-    // However, we need to manually construct the RecipeWithIngredients for now or use query.
+  async getRecipes(query?: string, cuisine?: string, ingredient?: string): Promise<Recipe[]> {
+    let conditions = [];
+
+    if (query) {
+      conditions.push(or(
+        ilike(recipes.name, `%${query}%`),
+        ilike(recipes.cuisine, `%${query}%`)
+      ));
+    }
+
+    if (cuisine) {
+      conditions.push(ilike(recipes.cuisine, `%${cuisine}%`));
+    }
     
-    const allRecipes = await db.query.recipes.findMany({
-      with: {
-        ingredients: {
-          with: {
-            ingredient: true
-          }
+    // Note: Filtering by ingredient efficiently requires a join, for simplicity in MVP we might just search recipe names or do a subquery. 
+    // To keep it simple and fast, we'll rely on name/cuisine search primarily, 
+    // but if an ingredient is specified, we can find recipes that have it.
+    if (ingredient) {
+        // Find ingredient ID first
+        const foundIngredients = await db.select().from(ingredients).where(ilike(ingredients.name, `%${ingredient}%`));
+        if (foundIngredients.length > 0) {
+            const ingredientIds = foundIngredients.map(i => i.id);
+            const recipeIds = await db.select({ recipeId: recipeIngredients.recipeId })
+                .from(recipeIngredients)
+                .where(inArray(recipeIngredients.ingredientId, ingredientIds));
+            
+            if (recipeIds.length > 0) {
+                const rIds = recipeIds.map(r => r.recipeId);
+                conditions.push(inArray(recipes.id, rIds));
+            } else {
+                return []; // No recipes with this ingredient
+            }
+        } else {
+            return []; // Ingredient not found
         }
-      },
-      where: (recipes, { ilike, or }) => search ? or(ilike(recipes.name, `%${search}%`)) : undefined,
-    });
-    
-    return allRecipes;
+    }
+
+    return await db.select().from(recipes).where(and(...conditions));
   }
 
   async getRecipe(id: number): Promise<RecipeWithIngredients | undefined> {
-    return await db.query.recipes.findFirst({
+    const recipe = await db.query.recipes.findFirst({
       where: eq(recipes.id, id),
       with: {
         ingredients: {
           with: {
-            ingredient: true
-          }
-        }
-      }
+            ingredient: true,
+          },
+        },
+      },
+    });
+    return recipe;
+  }
+
+  async getMealPlans(): Promise<MealPlanWithRecipe[]> {
+    return await db.query.mealPlans.findMany({
+      with: {
+        recipe: true,
+      },
+      orderBy: (mealPlans, { asc }) => [asc(mealPlans.day)],
     });
   }
 
-  async createRecipe(name: string, cuisine?: string): Promise<Recipe> {
-    const [recipe] = await db.insert(recipes).values({ name, cuisine }).returning();
-    return recipe;
+  async createMealPlan(plan: InsertMealPlan): Promise<MealPlan> {
+    const [created] = await db.insert(mealPlans).values(plan).returning();
+    return created;
   }
 
-  async createFullRecipe(input: CreateRecipeInput): Promise<RecipeWithIngredients> {
-    const [recipe] = await db.insert(recipes).values({
-      name: input.name,
-      cuisine: input.cuisine || "American",
-      instructions: input.instructions || [],
-      servings: 4,
-    }).returning();
-
-    if (input.ingredients && input.ingredients.length > 0) {
-      for (const ing of input.ingredients) {
-        const ingredient = await this.createIngredient(ing.name);
-        await this.linkIngredientToRecipe(recipe.id, ingredient.id, ing.quantity || "");
-      }
-    }
-
-    const fullRecipe = await this.getRecipe(recipe.id);
-    return fullRecipe!;
+  async deleteMealPlan(id: number): Promise<void> {
+    await db.delete(mealPlans).where(eq(mealPlans.id, id));
   }
 
-  async updateFullRecipe(id: number, input: CreateRecipeInput): Promise<RecipeWithIngredients | undefined> {
-    const existing = await this.getRecipe(id);
-    if (!existing) return undefined;
-
-    await db.update(recipes).set({
-      name: input.name,
-      cuisine: input.cuisine || existing.cuisine,
-      prepTime: input.prepTime ?? existing.prepTime,
-      instructions: input.instructions || existing.instructions,
-    }).where(eq(recipes.id, id));
-
-    if (input.ingredients) {
-      await db.delete(recipeIngredients).where(eq(recipeIngredients.recipeId, id));
-      
-      for (const ing of input.ingredients) {
-        if (ing.name.trim()) {
-          const ingredient = await this.createIngredient(ing.name);
-          await this.linkIngredientToRecipe(id, ingredient.id, ing.quantity || "");
-        }
-      }
-    }
-
-    return await this.getRecipe(id);
+  async clearMealPlans(): Promise<void> {
+    await db.delete(mealPlans);
   }
 
-  async deleteRecipe(id: number): Promise<boolean> {
-    const existing = await this.getRecipe(id);
-    if (!existing) return false;
-
-    await db.delete(weeklyPlan).where(eq(weeklyPlan.recipeId, id));
-    await db.delete(recipeIngredients).where(eq(recipeIngredients.recipeId, id));
-    await db.delete(recipes).where(eq(recipes.id, id));
-    
-    return true;
+  // Seed Helpers
+  async createRecipe(recipe: { name: string; cuisine?: string }): Promise<Recipe> {
+    const [created] = await db.insert(recipes).values(recipe).returning();
+    return created;
   }
 
-  async updateRecipeCuisine(id: number, cuisine: string): Promise<void> {
-    await db.update(recipes).set({ cuisine }).where(eq(recipes.id, id));
-  }
-
-  async updateRecipeImage(id: number, imageUrl: string): Promise<Recipe> {
-    const [recipe] = await db.update(recipes).set({ imageUrl }).where(eq(recipes.id, id)).returning();
-    return recipe;
-  }
-
-  async updateRecipeServings(id: number, servings: number): Promise<Recipe> {
-    const [recipe] = await db.update(recipes).set({ servings }).where(eq(recipes.id, id)).returning();
-    return recipe;
-  }
-
-  async updateRecipeInstructions(id: number, instructions: string[]): Promise<Recipe> {
-    const [recipe] = await db.update(recipes).set({ instructions }).where(eq(recipes.id, id)).returning();
-    return recipe;
-  }
-
-  async toggleFavorite(id: number): Promise<Recipe> {
-    const existing = await db.query.recipes.findFirst({ where: eq(recipes.id, id) });
-    const newValue = !existing?.isFavorite;
-    const [recipe] = await db.update(recipes).set({ isFavorite: newValue }).where(eq(recipes.id, id)).returning();
-    return recipe;
-  }
-
-  async createIngredient(name: string): Promise<Ingredient> {
-    // Check if exists first
-    const existing = await db.query.ingredients.findFirst({
-      where: eq(ingredients.name, name)
-    });
+  async createIngredient(name: string): Promise<{ id: number; name: string }> {
+    // Check exist first to avoid unique constraint errors during race conditions or re-seeding
+    const existing = await this.getIngredientByName(name);
     if (existing) return existing;
-
-    const [ingredient] = await db.insert(ingredients).values({ name }).returning();
-    return ingredient;
+    
+    const [created] = await db.insert(ingredients).values({ name }).onConflictDoNothing().returning();
+    if (!created) return await this.getIngredientByName(name) as { id: number; name: string };
+    return created;
   }
 
-  async linkIngredientToRecipe(recipeId: number, ingredientId: number, quantity: string): Promise<void> {
+  async addRecipeIngredient(recipeId: number, ingredientId: number, quantity: string): Promise<void> {
     await db.insert(recipeIngredients).values({
       recipeId,
       ingredientId,
-      quantity
+      quantity,
     });
   }
 
-  async getWeeklyPlan(): Promise<WeeklyPlanItemWithRecipe[]> {
-    return await db.query.weeklyPlan.findMany({
-      with: {
-        recipe: {
-          with: {
-            ingredients: {
-              with: {
-                ingredient: true
-              }
-            }
-          }
-        }
-      }
-    });
+  async getRecipeByName(name: string): Promise<Recipe | undefined> {
+      return await db.query.recipes.findFirst({
+          where: eq(recipes.name, name)
+      });
   }
 
-  async addToPlan(plan: CreateWeeklyPlanRequest): Promise<WeeklyPlanItem> {
-    // First, remove any existing meal for this day (to allow replacing)
-    await db.delete(weeklyPlan).where(eq(weeklyPlan.day, plan.day));
-    
-    // Then insert the new plan
-    const [item] = await db.insert(weeklyPlan).values(plan).returning();
-    return item;
-  }
-
-  async removeFromPlan(id: number): Promise<void> {
-    await db.delete(weeklyPlan).where(eq(weeklyPlan.id, id));
-  }
-  
-  async clearPlan(): Promise<void> {
-    await db.delete(weeklyPlan);
-  }
-
-  async getShoppingList(): Promise<ShoppingListResponse> {
-    const plan = await this.getWeeklyPlan();
-    const list: Record<number, { name: string, quantity: string[], recipes: string[] }> = {};
-
-    for (const item of plan) {
-      for (const ri of item.recipe.ingredients) {
-        if (!list[ri.ingredientId]) {
-          list[ri.ingredientId] = {
-            name: ri.ingredient.name,
-            quantity: [],
-            recipes: []
-          };
-        }
-        
-        // Simple aggregation logic: just list them. "2 onions, 1 onion"
-        if (ri.quantity) {
-          list[ri.ingredientId].quantity.push(ri.quantity);
-        }
-        if (!list[ri.ingredientId].recipes.includes(item.recipe.name)) {
-          list[ri.ingredientId].recipes.push(item.recipe.name);
-        }
-      }
-    }
-
-    return Object.entries(list).map(([id, data]) => ({
-      ingredientId: Number(id),
-      name: data.name,
-      quantity: data.quantity.join(" + "), // Simple aggregation
-      recipes: data.recipes
-    }));
+  async getIngredientByName(name: string): Promise<{ id: number; name: string } | undefined> {
+      return await db.query.ingredients.findFirst({
+          where: eq(ingredients.name, name)
+      });
   }
 }
 
